@@ -1,0 +1,54 @@
+
+---
+
+### 🧹 **.gitignore**
+
+```gitignore
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Environment variables
+.env
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS / Linux
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Testing and coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Local databases or cache
+*.sqlite3
+*.db
+*.redis
+
+# Other
+# Add any files or folders specific to your project setup that shouldn't be tracked
