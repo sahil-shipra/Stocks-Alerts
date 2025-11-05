@@ -31,3 +31,11 @@ python alerts_test.py
 ```sh
 uvicorn main:app --reload --port 8000
 ```
+
+### .env setup
+
+```sh
+DATABASE_URL=
+DATABASE_NAME=
+REDIS_URL=
+```
