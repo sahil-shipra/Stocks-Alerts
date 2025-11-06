@@ -4,7 +4,7 @@ import yfinance as yf
 import asyncio
 import logging
 from src.alert_engine import run_alerts
-from src.alerts import fetch_alerts_from_db
+from src.alerts import fetch_stock_alerts_from_db
 from src.utils.db import get_database
 import time
 from datetime import datetime
@@ -36,7 +36,7 @@ async def read_alerts():
 
     try:
 
-        items = await fetch_alerts_from_db()
+        items = await fetch_stock_alerts_from_db()
         await run_alerts(items)
 
         return {

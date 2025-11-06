@@ -25,7 +25,7 @@ async def check_advance_condition(key: str, item: any):
             print(item["emailAddress"])
             check_from_today_open_price(
                 ticker=item["ticker"]["ticker"],
-                currentPrice=item["addedPriceAt"],
+                currentPrice=item.get("addedPriceAt") or 0,
                 alert=item,
                 alertTriggered=alertTriggered,
                 alertTitleTickerFullName=item["ticker"]["nm"],

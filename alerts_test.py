@@ -1,10 +1,10 @@
+from src.index_stock_alerts import fetch_index_stock_alerts
 from src.alert_engine import run_alerts
-from src.alerts import fetch_alerts_from_db
+from src.alerts import fetch_stock_alerts_from_db, fetch_watchlist_alerts_from_db
 import asyncio
 from collections import defaultdict
 import yfinance as yf
 import logging
-from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ async def monitor_ticker(ticker, alerts):
     yf_ws = None
 
     try:
-        async with yf.AsyncWebSocket() as ws:
+        async with yf.AsyncWebSocket(verbose=True) as ws:
             yf_ws = ws
             await ws.subscribe([ticker])
 
@@ -44,7 +44,7 @@ async def monitor_ticker(ticker, alerts):
             await ws.listen(on_message)
 
     except Exception as e:
-        logger.exception(f"Error monitoring {ticker}: {e}")
+        logger.exception(f"Error monitoring {ticker}")
     finally:
         if yf_ws is not None:
             try:
@@ -56,21 +56,26 @@ async def monitor_ticker(ticker, alerts):
 
 async def main():
     # Fetch all alerts from database
-    result = await fetch_alerts_from_db()
+    stocks_alerts = await fetch_stock_alerts_from_db()
+
+    watchlist_alerts = await fetch_watchlist_alerts_from_db()
+
+    # Combine both lists
+    all_alerts = stocks_alerts + watchlist_alerts
 
     # Group alerts by ticker
     grouped_alerts = defaultdict(list)
-    for alert in result:
+    for alert in all_alerts:
         ticker = alert["ticker"]["ticker"]
         grouped_alerts[ticker].append(alert)
 
-    logger.info(
-        f"Monitoring {len(grouped_alerts)} tickers: {list(grouped_alerts.keys())}"
-    )
-
     # Create async tasks for each ticker
+
+    index_grouped_alerts = await fetch_index_stock_alerts()
+
     tasks = []
-    for ticker, alerts in grouped_alerts.items():
+    for ticker, alerts in index_grouped_alerts.items():
+        grouped_alerts[ticker].extend(alerts)
         task = asyncio.create_task(monitor_ticker(ticker, alerts))
         tasks.append(task)
 
