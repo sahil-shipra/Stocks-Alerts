@@ -21,7 +21,7 @@ async def check_alert_conditions(ticker, alerts, msg):
     if current_price is None:
         return
 
-    await run_alerts(alerts)
+    await run_alerts(alerts, ticker)
 
 
 async def monitor_ticker(ticker, alerts):
@@ -37,7 +37,7 @@ async def monitor_ticker(ticker, alerts):
             await ws.subscribe([ticker])
 
             async def on_message(msg: dict):
-                logger.debug(f"{ticker}: {msg}")
+                logger.debug(f"{ticker}")
                 await check_alert_conditions(ticker, alerts, msg)
 
             # Listen for messages
@@ -73,9 +73,18 @@ async def main():
 
     index_grouped_alerts = await fetch_index_stock_alerts()
 
+    print(f"index_grouped_alerts: - {len(index_grouped_alerts)}")
+    print(f"grouped_alerts: - {len(grouped_alerts)}")
+
+    combined_alerts = defaultdict(list, grouped_alerts)
+
+    if index_grouped_alerts:
+        for ticker, alerts in index_grouped_alerts.items():
+            combined_alerts[ticker].extend(alerts)
+
+    print(f"combined_alerts: - {len(combined_alerts)}")
     tasks = []
-    for ticker, alerts in index_grouped_alerts.items():
-        grouped_alerts[ticker].extend(alerts)
+    for ticker, alerts in combined_alerts.items():
         task = asyncio.create_task(monitor_ticker(ticker, alerts))
         tasks.append(task)
 

@@ -24,7 +24,8 @@ async def process_alert_condition(alert: any):
             print(f"Unknown command: {command}.")
 
 
-async def run_alerts(alerts: list):
+async def run_alerts(alerts: list, ticker: str):
     for alert in alerts:
+        alert["tickerNm"] = ticker
         await process_alert_condition(alert)
     return ""

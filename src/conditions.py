@@ -1,5 +1,10 @@
-from src.advance_condition.check_from_today_open_price import (
+from src.alert_cache import get_alert_triggered, store_alert_triggered
+from src.advance_condition import (
     check_from_today_open_price,
+    check_from_yesterday_close_price,
+    check_within_current_week,
+    check_within_past_x_weeks,
+    check_within_past_x_week_value,
 )
 
 
@@ -18,29 +23,37 @@ GOING_UP_DOWN = [
 ]
 
 
-async def check_advance_condition(key: str, item: any):
+async def check_advance_condition(key: str, alert: any):
     alertTriggered = []
+    ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
+    emailAddress = alert["emailAddress"][0]
     match key:
         case "fromTodayOpenPrice":
-            print(item["emailAddress"])
-            check_from_today_open_price(
-                ticker=item["ticker"]["ticker"],
-                currentPrice=item.get("addedPriceAt") or 0,
-                alert=item,
-                alertTriggered=alertTriggered,
-                alertTitleTickerFullName=item["ticker"]["nm"],
-                alertMessageTickerFullName=item["ticker"]["nm"],
-            )
+            if await get_alert_triggered(ticker, emailAddress):
+                print(
+                    f"✅ This alert has already been triggered: {ticker, emailAddress}"
+                )
+                return
+
+            check_from_today_open_price(alert=alert, alertTriggered=alertTriggered)
             if len(alertTriggered) > 0:
-                print(f"🚨 alertTriggered: {alertTriggered}")
+                print(f"🚨 Alert Triggered: {alertTriggered}")
+                await store_alert_triggered(
+                    ticker,
+                    emailAddress,
+                    key=key,
+                    alertTriggered=alertTriggered,
+                )
 
         case "fromYesterdayClosePrice":
-            print(f"----> check_advance_condition for {key}")
+            check_from_yesterday_close_price(alert=alert, alertTriggered=alertTriggered)
         case "withinCurrentWeek":
-            print(f"----> check_advance_condition for {key}")
+            check_within_current_week(alert=alert, alertTriggered=alertTriggered)
         case "withinPastXWeek":
-            print(f"----> check_advance_condition for {key}")
+            check_within_past_x_weeks(alert=alert, alertTriggered=alertTriggered)
+            # print(f"----> check_advance_condition for {key}")
         case "withinPastXWeekValue":
+            check_within_past_x_week_value(alert=alert, alertTriggered=alertTriggered)
             print(f"----> check_advance_condition for {key}")
         case "fromRecentHighestPrice":
             print(f"----> check_advance_condition for {key}")
@@ -58,11 +71,11 @@ async def check_advance_condition(key: str, item: any):
             print(f"Unknown command: {key}.")
 
 
-async def check_price_condition(item: any):
-    advance_condition = item["priceAdvanceCondition"]
+async def check_price_condition(alert: any):
+    advance_condition = alert["priceAdvanceCondition"]
 
     # Check if subCondition is GOING_UP or GOING_DOWN
-    if item["subCondition"] in ("GOING_UP", "GOING_DOWN"):
+    if alert["subCondition"] in ("GOING_UP", "GOING_DOWN"):
         # Collect all keys from GOING_UP_DOWN that are True
         true_conditions = [
             key for key in GOING_UP_DOWN if advance_condition.get(key) is True
@@ -71,6 +84,6 @@ async def check_price_condition(item: any):
         # Print results
         if true_conditions:
             for key in true_conditions:
-                await check_advance_condition(key, item)
+                await check_advance_condition(key, alert)
         else:
             print("-----> No True conditions found.")
