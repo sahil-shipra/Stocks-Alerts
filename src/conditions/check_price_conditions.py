@@ -5,6 +5,7 @@ from src.advance_condition import (
     check_within_current_week,
     check_within_past_x_weeks,
     check_within_past_x_week_value,
+    check_within_from_recent_highest_price,
 )
 
 
@@ -51,12 +52,12 @@ async def check_advance_condition(key: str, alert: any):
             check_within_current_week(alert=alert, alertTriggered=alertTriggered)
         case "withinPastXWeek":
             check_within_past_x_weeks(alert=alert, alertTriggered=alertTriggered)
-            # print(f"----> check_advance_condition for {key}")
         case "withinPastXWeekValue":
             check_within_past_x_week_value(alert=alert, alertTriggered=alertTriggered)
-            print(f"----> check_advance_condition for {key}")
         case "fromRecentHighestPrice":
-            print(f"----> check_advance_condition for {key}")
+            check_within_from_recent_highest_price(
+                alert=alert, alertTriggered=alertTriggered
+            )
         case "withinPastXDays":
             print(f"----> check_advance_condition for {key}")
         case "withinPastXDaysValue":
@@ -71,7 +72,7 @@ async def check_advance_condition(key: str, alert: any):
             print(f"Unknown command: {key}.")
 
 
-async def check_price_condition(alert: any):
+async def check_price_conditions(alert: any):
     advance_condition = alert["priceAdvanceCondition"]
 
     # Check if subCondition is GOING_UP or GOING_DOWN

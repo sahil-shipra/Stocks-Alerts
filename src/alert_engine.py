@@ -1,31 +1,37 @@
-from src.conditions import check_price_condition
+from src.conditions.check_opportunity_conditions import check_opportunity_conditions
+from src.conditions.check_dma_conditions import check_dma_conditions
+from src.conditions.check_pe_ratio_conditions import check_pe_ratio_conditions
+from src.conditions.check_price_conditions import check_price_conditions
+from src.conditions.check_drawdown_conditions import check_drawdown_conditions
+from src.conditions.check_rsi_conditions import check_rsi_conditions
 
 
 async def process_alert_condition(alert: any):
     command = alert["condition"]
     match command:
         case "DMA":
-            print(f"")
+            await check_dma_conditions(alert)
         case "PE_RATIO":
-            print(f"")
+            await check_pe_ratio_conditions(alert)
         case "PRICE":
-            await check_price_condition(alert)
+            await check_price_conditions(alert)
         case "DRAWDOWN":
-            print(f"")
+            await check_drawdown_conditions(alert)
         case "OPPORTUNITY":
-            print(f"")
+            await check_opportunity_conditions(alert)
         case "RSI":
-            print(f"")
+            await check_rsi_conditions(alert)
         case "CROSS_JUNCTION":
-            print(f"")
+            pass
         case "NEWS":
-            print(f"")
+            pass
         case _:
             print(f"Unknown command: {command}.")
 
 
-async def run_alerts(alerts: list, ticker: str):
+async def run_alerts(alerts: list, ticker: str, current_stock_data: any):
     for alert in alerts:
         alert["tickerNm"] = ticker
+        alert["currentStockData"] = current_stock_data
         await process_alert_condition(alert)
     return ""

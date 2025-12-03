@@ -3,10 +3,10 @@ from src.alert_engine import run_alerts
 from src.alerts import fetch_stock_alerts_from_db, fetch_watchlist_alerts_from_db
 import asyncio
 from collections import defaultdict
-import yfinance as yf
 import logging
+import yfinance as yf
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +21,7 @@ async def check_alert_conditions(ticker, alerts, msg):
     if current_price is None:
         return
 
-    await run_alerts(alerts, ticker)
+    await run_alerts(alerts, ticker, current_stock_data=msg)
 
 
 async def monitor_ticker(ticker, alerts):
@@ -38,6 +38,7 @@ async def monitor_ticker(ticker, alerts):
 
             async def on_message(msg: dict):
                 logger.debug(f"{ticker}")
+                # print(f"{ticker,'---------------->',msg}")
                 await check_alert_conditions(ticker, alerts, msg)
 
             # Listen for messages
