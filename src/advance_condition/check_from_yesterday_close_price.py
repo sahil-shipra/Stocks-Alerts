@@ -16,6 +16,10 @@ def check_from_yesterday_close_price(alert, alertTriggered):
     alertTitleTickerFullName = alert["ticker"]["nm"]
     alertMessageTickerFullName = alert["ticker"]["nm"]
 
+    print(f"currentPrice:{ticker}-{currentPrice}")
+    if currentPrice == 0:
+        return
+
     # Fetch historical data to get yesterday's close
     try:
         stock = yf.Ticker(ticker)

@@ -1,4 +1,5 @@
-from src.alert_cache import get_alert_triggered, store_alert_triggered
+from src.alert_trigger import run_alert_trigger
+from src.alert_cache import get_alert_triggered
 from src.advance_condition import (
     check_from_today_open_price,
     check_from_yesterday_close_price,
@@ -37,14 +38,7 @@ async def check_advance_condition(key: str, alert: any):
                 return
 
             check_from_today_open_price(alert=alert, alertTriggered=alertTriggered)
-            if len(alertTriggered) > 0:
-                print(f"🚨 Alert Triggered: {alertTriggered}")
-                await store_alert_triggered(
-                    ticker,
-                    emailAddress,
-                    key=key,
-                    alertTriggered=alertTriggered,
-                )
+            await run_alert_trigger(alert, alertTriggered, key)
 
         case "fromYesterdayClosePrice":
             check_from_yesterday_close_price(alert=alert, alertTriggered=alertTriggered)
@@ -55,7 +49,7 @@ async def check_advance_condition(key: str, alert: any):
         case "withinPastXWeekValue":
             check_within_past_x_week_value(alert=alert, alertTriggered=alertTriggered)
         case "fromRecentHighestPrice":
-            check_within_from_recent_highest_price(
+            await check_within_from_recent_highest_price(
                 alert=alert, alertTriggered=alertTriggered
             )
         case "withinPastXDays":
