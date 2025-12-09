@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import requests
 from src.alert_cache import store_alert_triggered
+import json
 
 
 def send_alert_notification(alert, alert_triggered_list):
@@ -21,6 +22,7 @@ def send_alert_notification(alert, alert_triggered_list):
         return False
 
     auth_token = os.getenv("NODE_AUTH_TOKEN")
+    notification_env = os.getenv("NOTIFICATION_ENV")
 
     if not auth_token:
         return False
@@ -32,7 +34,7 @@ def send_alert_notification(alert, alert_triggered_list):
 
     # Prepare request payload
     payload = {
-        "alertId": str(alert["_id"]), #6903290431fe6a59be5a4894
+        "alertId": str(alert["_id"]),  # 6903290431fe6a59be5a4894
         "alertList": alert_triggered_list,
         "userXTickerId": str(alert["userXTickerId"]),
         "frequency": alert["frequency"],
@@ -46,15 +48,15 @@ def send_alert_notification(alert, alert_triggered_list):
 
     # Send notification
     try:
-        print(f"payload:{payload}")
-        response = requests.post(
-            "https://api-shipra-v3.pilleo.ca/admin/alert/send",
-            json=payload,
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
-        return True
+        if notification_env == "production":
+            response = requests.post(
+                "https://api-shipra-v3.pilleo.ca/admin/alert/send",
+                json=payload,
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+            return True
     except requests.exceptions.Timeout:
         print(f"Alert notification timeout for alertId: {alert['_id']}")
         return False
@@ -67,9 +69,7 @@ async def run_alert_trigger(alert, alertTriggered, key):
     if len(alertTriggered) > 0:
         ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
         emailAddress = alert["emailAddress"][0]
-        print(f"{alert}")
-        print(f"alertTriggered:{alertTriggered}")
-        print(f"🚨 Alert Triggered: {alertTriggered}")
+        print(f"🚨 Alert Triggered: {json.dumps(alertTriggered,indent=4)}")
         send_alert_notification(alert, alertTriggered)
         await store_alert_triggered(
             ticker,

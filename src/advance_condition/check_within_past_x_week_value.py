@@ -13,7 +13,7 @@ def check_within_past_x_week_value(alert, alertTriggered):
         return
 
     ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
-    currentPrice = alert.get("addedPriceAt") or 0
+    currentPrice = alert.get("current_price") or 0
     alertTitleTickerFullName = alert["ticker"]["nm"]
     alertMessageTickerFullName = alert["ticker"]["nm"]
 

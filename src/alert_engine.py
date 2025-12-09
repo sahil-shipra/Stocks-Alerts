@@ -33,11 +33,11 @@ async def run_alerts(alerts: list, ticker: str, current_stock_data: any):
     for alert in alerts:
 
         if alert["status"] == "DEACTIVATED":
-            print(f"DEACTIVATED:{str(alert["_id"])}")
             pass
 
         alert["tickerNm"] = ticker
         alert["currentStockData"] = current_stock_data
         alert["userXTickerId"] = alert["ticker"]["_id"]
+        alert["current_price"] = current_stock_data.get("price")
         await process_alert_condition(alert)
     return ""

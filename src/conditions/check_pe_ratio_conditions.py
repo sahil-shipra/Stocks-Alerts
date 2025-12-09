@@ -1,4 +1,7 @@
+import asyncio
 from datetime import datetime, timedelta
+from src.alert_cache import get_alert_triggered
+from src.alert_trigger import run_alert_trigger
 from src.apis.get_ticker_pe_ratio import get_ticker_pe_ratio
 
 
@@ -52,6 +55,11 @@ def find_extreme(pe_list, years=None, highest=True):
 
 async def check_pe_ratio_conditions(alert):
     alerts = []
+    ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
+    emailAddress = alert["emailAddress"][0]
+
+    def trigger_alert(alertTriggered, key):
+        asyncio.create_task(run_alert_trigger(alert, alertTriggered, key))
 
     if alert is None:
         return
@@ -64,7 +72,11 @@ async def check_pe_ratio_conditions(alert):
     currentPe = pe_list[-1]["value"]
 
     # PE Less Than X
-    if conds.get("peRatioLessThanX") and currentPe < conds["peRatioLessThanXValue"]:
+    if (
+        conds.get("peRatioLessThanX")
+        and currentPe < conds["peRatioLessThanXValue"]
+        and not await get_alert_triggered(ticker, emailAddress, key="peRatioLessThanX")
+    ):
         alerts.append(
             {
                 "advanceCondition": "peRatioLessThanX",
@@ -74,11 +86,15 @@ async def check_pe_ratio_conditions(alert):
                 "alertMessage": f'{alertMessageTickerFullName} The PE ratio has dropped to {round(currentPe,2)}, below your threshold of {conds["peRatioLessThanXValue"]}',
             }
         )
+        trigger_alert(alertTriggered=alerts, key="peRatioLessThanX")
 
     # PE Greater Than X
     if (
         conds.get("peRatioGreaterThanX")
         and currentPe > conds["peRatioGreaterThanXValue"]
+        and not await get_alert_triggered(
+            ticker, emailAddress, key="peRatioGreaterThanX"
+        )
     ):
         alerts.append(
             {
@@ -89,9 +105,12 @@ async def check_pe_ratio_conditions(alert):
                 "alertMessage": f'{alertMessageTickerFullName} The PE ratio has risen to {round(currentPe,2)}, above your threshold of {conds["peRatioGreaterThanXValue"]}',
             }
         )
+        trigger_alert(alertTriggered=alerts, key="peRatioGreaterThanX")
 
     # PE in Specific Range
-    if conds.get("peRatioSpecificRange"):
+    if conds.get("peRatioSpecificRange") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioSpecificRange"
+    ):
         if pe_in_range(currentPe, conds["lowRange"], conds["highRange"]):
             alerts.append(
                 {
@@ -102,9 +121,12 @@ async def check_pe_ratio_conditions(alert):
                     "alertMessage": f'{alertMessageTickerFullName} The PE ratio is now {round(currentPe,2)}, within your range {conds["lowRange"]}-{conds["highRange"]}',
                 }
             )
+            trigger_alert(alertTriggered=alerts, key="peRatioSpecificRange")
 
     # Near X-year Low
-    if conds.get("peRatioNearXYearLow"):
+    if conds.get("peRatioNearXYearLow") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioNearXYearLow"
+    ):
         low_obj = find_extreme(pe_list, conds["peRatioNearXYearLowYear"], highest=False)
         if low_obj:
             lower, upper = low_obj["value"] * (
@@ -120,9 +142,12 @@ async def check_pe_ratio_conditions(alert):
                         "alertMessage": f'{alertMessageTickerFullName} The PE ratio is {round(currentPe,2)}, within {conds["peRatioNearXYearLowValue"]}% of the {conds["peRatioNearXYearLowYear"]}-year low of {low_obj["value"]}',
                     }
                 )
+                trigger_alert(alertTriggered=alerts, key="peRatioNearXYearLow")
 
     # Near X-year High
-    if conds.get("peRatioNearXYearHigh"):
+    if conds.get("peRatioNearXYearHigh") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioNearXYearHigh"
+    ):
         high_obj = find_extreme(
             pe_list, conds["peRatioNearXYearHighYear"], highest=True
         )
@@ -140,9 +165,12 @@ async def check_pe_ratio_conditions(alert):
                         "alertMessage": f'{alertMessageTickerFullName} The PE ratio is {round(currentPe,2)}, within {conds["peRatioNearXYearHighValue"]}% of the {conds["peRatioNearXYearHighYear"]}-year high of {high_obj["value"]}',
                     }
                 )
+                trigger_alert(alertTriggered=alerts, key="peRatioNearXYearHigh")
 
     # Historical Extreme
-    if conds.get("peRatioHistoricalExtreme"):
+    if conds.get("peRatioHistoricalExtreme") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioHistoricalExtreme"
+    ):
         extreme_obj = find_extreme(pe_list, highest=True)
         if extreme_obj and currentPe >= extreme_obj["value"]:
             alerts.append(
@@ -154,9 +182,12 @@ async def check_pe_ratio_conditions(alert):
                     "alertMessage": f"{alertMessageTickerFullName} The PE ratio has reached {round(currentPe,2)}, surpassing previous historical levels.",
                 }
             )
+            trigger_alert(alertTriggered=alerts, key="peRatioHistoricalExtreme")
 
     # Trending Up
-    if conds.get("peRatioTrendingUp"):
+    if conds.get("peRatioTrendingUp") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioTrendingUp"
+    ):
         trending, first, last, change = check_trend(
             pe_list, conds["peRatioTrendingUpValue"], increasing=True
         )
@@ -170,9 +201,12 @@ async def check_pe_ratio_conditions(alert):
                     "alertMessage": f'{alertMessageTickerFullName} PE ratio increased {round(change,2)}% from {first} to {last} over past {conds["peRatioTrendingUpValue"]} days.',
                 }
             )
+            trigger_alert(alertTriggered=alerts, key="peRatioTrendingUp")
 
     # Trending Down
-    if conds.get("peRatioTrendingDown"):
+    if conds.get("peRatioTrendingDown") and not await get_alert_triggered(
+        ticker, emailAddress, key="peRatioTrendingDown"
+    ):
         trending, first, last, change = check_trend(
             pe_list, conds["peRatioTrendingDownValue"], increasing=False
         )
@@ -186,5 +220,6 @@ async def check_pe_ratio_conditions(alert):
                     "alertMessage": f'{alertMessageTickerFullName} PE ratio decreased {round(change,2)}% from {first} to {last} over past {conds["peRatioTrendingDownValue"]} days.',
                 }
             )
+            trigger_alert(alertTriggered=alerts, key="peRatioTrendingDown")
 
     return alerts

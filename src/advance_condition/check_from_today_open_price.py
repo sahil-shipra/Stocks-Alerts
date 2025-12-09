@@ -22,13 +22,12 @@ def check_from_today_open_price(alert, alertTriggered):
 
     # Extract alert data
     ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
-    current_price = alert.get("addedPriceAt") or 0
+    current_price = alert.get("current_price") or 0
     ticker_full_name = alert["ticker"]["nm"]
     threshold = alert["value"]
     value_type = alert["valueType"]
     sub_condition = alert["subCondition"]
 
-    print(f"currentPrice:{ticker}-{current_price}")
     if current_price == 0:
         return
     # Fetch today's open price

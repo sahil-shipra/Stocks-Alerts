@@ -12,25 +12,22 @@ def check_from_yesterday_close_price(alert, alertTriggered):
         return
 
     ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
-    currentPrice = alert.get("addedPriceAt") or 0
+    currentPrice = alert.get("current_price") or 0
     alertTitleTickerFullName = alert["ticker"]["nm"]
     alertMessageTickerFullName = alert["ticker"]["nm"]
 
-    print(f"currentPrice:{ticker}-{currentPrice}")
     if currentPrice == 0:
         return
 
     # Fetch historical data to get yesterday's close
     try:
         stock = yf.Ticker(ticker)
-        print(f"Checking ticker: {ticker}")
-
+        
         # Get data for the last 5 days to ensure we have yesterday's close
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
 
         data = stock.history(start=start_date, end=end_date)
-        print(f"Data retrieved: {len(data)} rows")
 
         if data.empty or len(data) < 2:
             print(f"[Warning] Insufficient data for {ticker}")
@@ -50,11 +47,7 @@ def check_from_yesterday_close_price(alert, alertTriggered):
     percentageChange = (change / yesterdayClosePrice) * 100
     value = alert["value"]
 
-    print(
-        f"Yesterday's Close: ${yesterdayClosePrice}, Current: ${currentPrice}, Change: ${change}, Change %: {percentageChange:.2f}%"
-    )
-
-    # --- Check percentage-based alerts ---
+     # --- Check percentage-based alerts ---
     if alert["valueType"] == "PERCENTAGE":
         if alert["subCondition"] == "GOING_UP" and percentageChange >= value:
             alertTitle = f"{alertTitleTickerFullName} Going Up"

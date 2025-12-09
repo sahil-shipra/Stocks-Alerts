@@ -29,41 +29,74 @@ async def check_advance_condition(key: str, alert: any):
     alertTriggered = []
     ticker = alert.get("tickerNm") or alert["ticker"]["ticker"]
     emailAddress = alert["emailAddress"][0]
-    match key:
-        case "fromTodayOpenPrice":
-            if await get_alert_triggered(ticker, emailAddress):
-                print(
-                    f"✅ This alert has already been triggered: {ticker, emailAddress}"
-                )
-                return
 
-            check_from_today_open_price(alert=alert, alertTriggered=alertTriggered)
-            await run_alert_trigger(alert, alertTriggered, key)
+    # 🔹 Cases that should NOT run get_alert_triggered() first
+    skip_trigger_check = {
+        "withinPastXWeek",
+        "withinPastXWeekValue",
+        "fromRecentHighestPrice",
+        "withinPastXDays",
+        "withinPastXDaysValue",
+        "nearing52WeekLow",
+        "nearing52WeekHigh",
+        "nearingAllTimeHigh",
+    }
 
-        case "fromYesterdayClosePrice":
-            check_from_yesterday_close_price(alert=alert, alertTriggered=alertTriggered)
-        case "withinCurrentWeek":
-            check_within_current_week(alert=alert, alertTriggered=alertTriggered)
-        case "withinPastXWeek":
-            check_within_past_x_weeks(alert=alert, alertTriggered=alertTriggered)
-        case "withinPastXWeekValue":
-            check_within_past_x_week_value(alert=alert, alertTriggered=alertTriggered)
-        case "fromRecentHighestPrice":
-            await check_within_from_recent_highest_price(
-                alert=alert, alertTriggered=alertTriggered
+    # 🔹 Map keys → handler functions
+    handlers = {
+        "fromTodayOpenPrice": lambda: check_from_today_open_price(
+            alert, alertTriggered
+        ),
+        "fromYesterdayClosePrice": lambda: check_from_yesterday_close_price(
+            alert, alertTriggered
+        ),
+        "withinCurrentWeek": lambda: check_within_current_week(alert, alertTriggered),
+        "withinPastXWeek": lambda: check_within_past_x_weeks(alert, alertTriggered),
+        "withinPastXWeekValue": lambda: check_within_past_x_week_value(
+            alert, alertTriggered
+        ),
+        "fromRecentHighestPrice": lambda: check_within_from_recent_highest_price(
+            alert=alert, alertTriggered=alertTriggered
+        ),
+    }
+
+    # 🔹 Keys that only log for now
+    log_only = {
+        "withinPastXDays",
+        "withinPastXDaysValue",
+        "nearing52WeekLow",
+        "nearing52WeekHigh",
+        "nearingAllTimeHigh",
+    }
+
+    # ---------- Handle log-only cases ----------
+    if key in log_only:
+        # print(f"----> check_advance_condition for {key}")
+        return
+
+    # ---------- Unknown command ----------
+    if key not in handlers:
+        print(f"Unknown command: {key}.")
+        return
+
+    # ---------- Check if alert has already been triggered ----------
+    if key not in skip_trigger_check:
+        if await get_alert_triggered(ticker, emailAddress, key):
+            print(
+                f"✅ This alert has already been triggered: {key, ticker, emailAddress}"
             )
-        case "withinPastXDays":
-            print(f"----> check_advance_condition for {key}")
-        case "withinPastXDaysValue":
-            print(f"----> check_advance_condition for {key}")
-        case "nearing52WeekLow":
-            print(f"----> check_advance_condition for {key}")
-        case "nearing52WeekHigh":
-            print(f"----> check_advance_condition for {key}")
-        case "nearingAllTimeHigh":
-            print(f"----> check_advance_condition for {key}")
-        case _:
-            print(f"Unknown command: {key}.")
+            return
+
+    # ---------- Run the actual condition handler ----------
+    handler = handlers[key]
+    result = handler()
+
+    # Some handlers are async (e.g., fromRecentHighestPrice)
+    if hasattr(result, "__await__"):
+        await result
+
+    # ---------- Execute alert trigger ----------
+    await run_alert_trigger(alert, alertTriggered, key)
 
 
 async def check_price_conditions(alert: any):

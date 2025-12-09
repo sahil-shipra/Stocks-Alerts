@@ -1,74 +1,79 @@
+from src.alert_cache import get_alert_triggered
+from src.alert_trigger import run_alert_trigger
 from src.apis.get_ticker_closing_price import get_ticker_closing_price
 import pandas as pd
-import copy
+import numpy as np
 
 
 async def compute_drawdowns(ticker: str):
     """
     Returns drawdown_list, current drawdown, and latest running max price.
     """
-    # ticker = "GOOGL"  # alert.ticker
     data = await get_ticker_closing_price(ticker)
-    stock_data = [{"date": d["time"], "close": d["value"]} for d in data]
 
-    df = pd.DataFrame(copy.deepcopy(stock_data))
+    # Direct DataFrame creation without deep copy
+    df = pd.DataFrame(data)
+    df["Date"] = pd.to_datetime(df["time"], utc=True)
+    df = df.set_index("Date")[["value"]].rename(columns={"value": "Close"})
 
-    df["Date"] = pd.to_datetime(df["date"]).dt.tz_localize("UTC")
-    df["Close"] = df["close"]
-    df.set_index("Date", inplace=True)
-
-    # Compute running max and drawdown
+    # Vectorized operations
     df["running_max"] = df["Close"].cummax()
     df["drawdown"] = df["Close"] / df["running_max"] - 1
 
     current_drawdown = df["drawdown"].iloc[-1]
     current_date = df.index[-1]
 
-    drawdown_periods = []
-    drawdown_start = None
+    # Vectorized drawdown period detection
+    drawdown_periods = _extract_drawdown_periods_vectorized(df, current_date)
 
-    for date, dd in df["drawdown"].items():
-        if dd < 0 and drawdown_start is None:
-            drawdown_start = date
-
-        elif dd == 0 and drawdown_start is not None:
-            drawdown_end = date
-
-            period = extract_drawdown_period(df, drawdown_start, drawdown_end)
-            drawdown_periods.append(period)
-
-            drawdown_start = None
-
-    # Handle ongoing drawdown
-    if drawdown_start is not None:
-        period = extract_drawdown_period(df, drawdown_start, current_date, ongoing=True)
-        drawdown_periods.append(period)
-
-    # Convert to DataFrame
-    drawdown_df = pd.DataFrame(drawdown_periods)
-
-    # Take only significant drawdowns > 5%
-    drawdown_df = drawdown_df[drawdown_df["max_drawdown"] < -5]
-
-    # Convert rows to list of dicts
-    drawdown_list = drawdown_df.to_dict(orient="records")
-
-    # Reverse to get most recent first
+    # Filter significant drawdowns (> 5%)
+    drawdown_list = [d for d in drawdown_periods if d["max_drawdown"] < -5]
     drawdown_list.reverse()
 
     return drawdown_list, current_drawdown, df["running_max"].iloc[-1]
 
 
-def extract_drawdown_period(df, start, end, ongoing=False):
+def _extract_drawdown_periods_vectorized(df, current_date):
+    """Extract drawdown periods using vectorized operations."""
+    drawdowns = df["drawdown"].values
+    dates = df.index
+
+    # Identify drawdown boundaries
+    is_drawdown = drawdowns < 0
+    boundaries = np.diff(np.concatenate([[False], is_drawdown, [False]]).astype(int))
+    starts = np.where(boundaries == 1)[0]
+    ends = np.where(boundaries == -1)[0]
+
+    periods = []
+    for start_idx, end_idx in zip(starts, ends):
+        start_date = dates[start_idx]
+        end_date = dates[end_idx] if end_idx < len(dates) else current_date
+        ongoing = end_idx >= len(dates)
+
+        period = _extract_drawdown_stats(df, start_date, end_date, ongoing)
+        periods.append(period)
+
+    # Handle ongoing drawdown
+    if is_drawdown[-1] and (
+        len(starts) == 0 or starts[-1] >= ends[-1] if len(ends) > 0 else True
+    ):
+        start_idx = starts[-1] if len(starts) > 0 else np.where(is_drawdown)[0][0]
+        start_date = dates[start_idx]
+        period = _extract_drawdown_stats(df, start_date, current_date, ongoing=True)
+        periods.append(period)
+
+    return periods
+
+
+def _extract_drawdown_stats(df, start, end, ongoing=False):
     """Extract stats of a drawdown period."""
     dd_slice = df.loc[start:end]
-    running_max_slice = df["running_max"].loc[start:end]
 
-    peak_price = running_max_slice.iloc[0]
+    peak_price = df["running_max"].loc[start]
     low_price = dd_slice["Close"].min()
     max_dd_value = dd_slice["drawdown"].min()
     max_dd_date = dd_slice["drawdown"].idxmin()
-    max_dd_price = df["Close"].loc[max_dd_date]
+    max_dd_price = dd_slice["Close"].loc[max_dd_date]
     duration = (end - start).days
 
     opportunity = (
@@ -88,121 +93,148 @@ def extract_drawdown_period(df, start, end, ongoing=False):
     }
 
 
-def add_alert(alertTriggered, condition, title, message):
-    """Helper to append alerts in a consistent format."""
-    alertTriggered.append(
-        {
-            "advanceCondition": condition,
-            "condition": "DRAWDOWN",
-            "subCondition": "",
-            "alertTitle": title,
-            "alertMessage": message,
-        }
-    )
+def _create_alert(condition, title, message):
+    """Helper to create alert dict."""
+    return {
+        "advanceCondition": condition,
+        "condition": "DRAWDOWN",
+        "subCondition": "",
+        "alertTitle": title,
+        "alertMessage": message,
+    }
 
 
-# MAIN HANDLER
+async def _check_alert(ticker, email, key, condition_fn, alert_data):
+    """Generic alert checker to reduce code duplication."""
+    if await get_alert_triggered(ticker, email, key=key):
+        return None
+
+    result = condition_fn(alert_data)
+    await run_alert_trigger(alert_data["alert"], alert_data["alerts"], key=key)
+    return result
+
+
 async def check_drawdown_conditions(alert):
-    alertTriggered = []
-
-    alertTitleTickerFullName = alert["tickerNm"]
-    alertMessageTickerFullName = alert["tickerNm"]
-    currentStockData = alert["currentStockData"]
-    currentPrice = currentStockData["price"]
-    ticker = alert["tickerNm"]
-    # if alert["condition"] != "DRAWDOWN" or lastCloseDate != todayDate:
-    #     return
+    """Main handler for drawdown condition checking."""
     if alert is None:
         return
 
+    alertTriggered = []
+    ticker = alert["tickerNm"]
+    currentPrice = alert["currentStockData"]["price"]
+    emailAddress = alert["emailAddress"][0]
     drawdownAdvanceCondition = alert["drawdownAdvanceCondition"]
 
-    # Compute Drawdowns
+    # Compute drawdowns once
     drawdown_list, currentDrawdown, _ = await compute_drawdowns(ticker)
 
-    # ========== Common computed values ==========
+    if len(drawdown_list) < 1:
+        return
+
+    # Pre-compute common values
     last_dd = drawdown_list[1] if len(drawdown_list) > 1 else None
     worst_dd = min(drawdown_list, key=lambda x: x["max_drawdown"])
     current_dd_info = drawdown_list[0]
 
-    # ====================================================
-    # ALERT 1: Near Last Drawdown
-    # ====================================================
+    alert_data = {
+        "alert": alert,
+        "alerts": alertTriggered,
+        "ticker": ticker,
+        "currentPrice": currentPrice,
+        "currentDrawdown": currentDrawdown,
+        "tickerNm": alert["tickerNm"],
+    }
+
+    # Alert 1: Near Last Drawdown
     if drawdownAdvanceCondition.get("nearLastDrawdown") and last_dd:
-        tolerance = drawdownAdvanceCondition["nearLastDrawdownValue"] / 100
-        dd_val = last_dd["max_drawdown"]
+        if not await get_alert_triggered(ticker, emailAddress, key="nearLastDrawdown"):
+            tolerance = drawdownAdvanceCondition["nearLastDrawdownValue"] / 100
+            dd_val = last_dd["max_drawdown"]
+            lower, upper = dd_val * (1 - tolerance), dd_val * (1 + tolerance)
 
-        lower = dd_val * (1 - tolerance)
-        upper = dd_val * (1 + tolerance)
+            if lower <= currentDrawdown * 100 <= upper:
+                alertTriggered.append(
+                    _create_alert(
+                        "nearLastDrawdown",
+                        f"{ticker} Near Last Drawdown",
+                        f"{ticker} is near its last drawdown. Price {currentPrice} is within "
+                        f"{drawdownAdvanceCondition['nearLastDrawdownValue']}% of {round(dd_val, 2)}%.",
+                    )
+                )
+        await run_alert_trigger(alert, alertTriggered, key="nearLastDrawdown")
 
-        if lower <= currentDrawdown * 100 <= upper:
-            title = f"{alertTitleTickerFullName} Near Last Drawdown"
-            msg = (
-                f"{alertMessageTickerFullName} is near its last drawdown. "
-                f"Price {(currentPrice)} is within "
-                f"{drawdownAdvanceCondition['nearLastDrawdownValue']}% of "
-                f"{round(dd_val, 2)}%."
-            )
-            add_alert(alertTriggered, "nearLastDrawdown", title, msg)
-
-    # ====================================================
-    # ALERT 2: Price Surpasses Last Drawdown Price
-    # ====================================================
+    # Alert 2: Price Surpasses Last Drawdown Price
     if drawdownAdvanceCondition.get("priceSurpassLastDrawdown") and last_dd:
-        if currentPrice < last_dd["max_drawdown_price"]:
-            title = f"{alertTitleTickerFullName} Price Surpass Last Drawdown"
-            msg = (
-                f"{alertMessageTickerFullName} has fallen below the last "
-                f"drawdown price ({(currentPrice)})."
-            )
-            add_alert(alertTriggered, "priceSurpassLastDrawdown", title, msg)
+        if not await get_alert_triggered(
+            ticker, emailAddress, key="priceSurpassLastDrawdown"
+        ):
+            if currentPrice < last_dd["max_drawdown_price"]:
+                alertTriggered.append(
+                    _create_alert(
+                        "priceSurpassLastDrawdown",
+                        f"{ticker} Price Surpass Last Drawdown",
+                        f"{ticker} has fallen below the last drawdown price ({currentPrice}).",
+                    )
+                )
+        await run_alert_trigger(alert, alertTriggered, key="priceSurpassLastDrawdown")
 
-    # ====================================================
-    # ALERT 3: Surpasses Historical Drawdown
-    # ====================================================
+    # Alert 3: Surpasses Historical Drawdown
     if drawdownAdvanceCondition.get("priceSurpassMultipleHistoricalDrawdown"):
-        if currentPrice < worst_dd["max_drawdown_price"]:
-            title = f"{alertTitleTickerFullName} Surpass Historical Drawdown"
-            msg = (
-                f"{alertMessageTickerFullName} fell below all historical "
-                f"drawdown prices. Current: {(currentPrice)}."
-            )
-            add_alert(
-                alertTriggered, "priceSurpassMultipleHistoricalDrawdown", title, msg
-            )
-
-    # ====================================================
-    # ALERT 4: Price Approaches Historical Drawdown
-    # ====================================================
-    if drawdownAdvanceCondition.get("priceApproachHistoricalDrawdown"):
-        tolerance = (
-            drawdownAdvanceCondition["priceApproachHistoricalDrawdownValue"] / 100
+        if not await get_alert_triggered(
+            ticker, emailAddress, key="priceSurpassMultipleHistoricalDrawdown"
+        ):
+            if currentPrice < worst_dd["max_drawdown_price"]:
+                alertTriggered.append(
+                    _create_alert(
+                        "priceSurpassMultipleHistoricalDrawdown",
+                        f"{ticker} Surpass Historical Drawdown",
+                        f"{ticker} fell below all historical drawdown prices. Current: {currentPrice}.",
+                    )
+                )
+        await run_alert_trigger(
+            alert, alertTriggered, key="priceSurpassMultipleHistoricalDrawdown"
         )
-        dd_price = worst_dd["max_drawdown_price"]
 
-        upper = dd_price * (1 + tolerance)
-
-        if dd_price <= currentPrice <= upper:
-            title = f"{alertTitleTickerFullName} Approach Historical Drawdown"
-            msg = (
-                f"{alertMessageTickerFullName} is approaching its historical drawdown "
-                f"within {drawdownAdvanceCondition['priceApproachHistoricalDrawdownValue']}%."
+    # Alert 4: Price Approaches Historical Drawdown
+    if drawdownAdvanceCondition.get("priceApproachHistoricalDrawdown"):
+        if not await get_alert_triggered(
+            ticker, emailAddress, key="priceApproachHistoricalDrawdown"
+        ):
+            tolerance = (
+                drawdownAdvanceCondition["priceApproachHistoricalDrawdownValue"] / 100
             )
-            add_alert(alertTriggered, "priceApproachHistoricalDrawdown", title, msg)
+            dd_price = worst_dd["max_drawdown_price"]
+            upper = dd_price * (1 + tolerance)
 
-    # ====================================================
-    # ALERT 5: Recover After Drawdown
-    # ====================================================
+            if dd_price <= currentPrice <= upper:
+                alertTriggered.append(
+                    _create_alert(
+                        "priceApproachHistoricalDrawdown",
+                        f"{ticker} Approach Historical Drawdown",
+                        f"{ticker} is approaching its historical drawdown within "
+                        f"{drawdownAdvanceCondition['priceApproachHistoricalDrawdownValue']}%.",
+                    )
+                )
+        await run_alert_trigger(
+            alert, alertTriggered, key="priceApproachHistoricalDrawdown"
+        )
+
+    # Alert 5: Recover After Drawdown
     if drawdownAdvanceCondition.get("priceRecoverAfterDrawdown"):
-        tolerance = drawdownAdvanceCondition["priceRecoverAfterDrawdownValue"] / 100
-        dd_price = current_dd_info["max_drawdown_price"]
-        upper = dd_price * (1 + tolerance)
+        if not await get_alert_triggered(
+            ticker, emailAddress, key="priceRecoverAfterDrawdown"
+        ):
+            tolerance = drawdownAdvanceCondition["priceRecoverAfterDrawdownValue"] / 100
+            dd_price = current_dd_info["max_drawdown_price"]
+            upper = dd_price * (1 + tolerance)
 
-        if currentPrice > upper:
-            title = f"{alertTitleTickerFullName} Price Recover After Drawdown"
-            msg = (
-                f"{alertMessageTickerFullName} recovered "
-                f"{drawdownAdvanceCondition['priceRecoverAfterDrawdownValue']}%. "
-                f"Price is now {(currentPrice)}."
-            )
-            add_alert(alertTriggered, "priceRecoverAfterDrawdown", title, msg)
+            if currentPrice > upper:
+                alertTriggered.append(
+                    _create_alert(
+                        "priceRecoverAfterDrawdown",
+                        f"{ticker} Price Recover After Drawdown",
+                        f"{ticker} recovered {drawdownAdvanceCondition['priceRecoverAfterDrawdownValue']}%. "
+                        f"Price is now {currentPrice}.",
+                    )
+                )
+        await run_alert_trigger(alert, alertTriggered, key="priceRecoverAfterDrawdown")

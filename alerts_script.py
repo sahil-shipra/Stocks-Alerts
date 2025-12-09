@@ -38,7 +38,6 @@ async def monitor_ticker(ticker, alerts):
 
             async def on_message(msg: dict):
                 logger.debug(f"{ticker}")
-                # print(f"{ticker,'---------------->',msg}")
                 await check_alert_conditions(ticker, alerts, msg)
 
             # Listen for messages
@@ -73,9 +72,6 @@ async def main():
     # Create async tasks for each ticker
 
     index_grouped_alerts = await fetch_index_stock_alerts()
-
-    print(f"index_grouped_alerts: - {len(index_grouped_alerts)}")
-    print(f"grouped_alerts: - {len(grouped_alerts)}")
 
     combined_alerts = defaultdict(list, grouped_alerts)
 

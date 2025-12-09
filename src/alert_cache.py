@@ -3,12 +3,16 @@ from src.utils.redis_cache import get_redis
 from datetime import datetime, timedelta
 
 
-async def get_alert_triggered(ticker: str, emailAddress: str):
+async def get_alert_triggered(
+    ticker: str,
+    emailAddress: str,
+    key: str,
+):
     redis_client = await get_redis()
     """Read stored alert from Redis for the current day."""
 
     today_str = datetime.now().strftime("%Y-%m-%d")
-    redis_key = f"alert:triggered:{ticker}:{emailAddress}:{today_str}"
+    redis_key = f"alert:triggered:{ticker}:{key}:{emailAddress}:{today_str}"
 
     # Retrieve the hash
     alert_data = await redis_client.hgetall(redis_key)
@@ -42,7 +46,7 @@ async def store_alert_triggered(
     seconds_until_midnight = int((midnight - now).total_seconds())
 
     # Create Redis key (unique per user + date)
-    redis_key = f"alert:triggered:{ticker}:{emailAddress}:{today_str}"
+    redis_key = f"alert:triggered:{ticker}:{key}:{emailAddress}:{today_str}"
 
     alert_data = {
         "ticker": str(ticker),
@@ -57,6 +61,4 @@ async def store_alert_triggered(
     await redis_client.hset(redis_key, mapping=alert_data)
     await redis_client.expire(redis_key, seconds_until_midnight)
 
-    print(
-        f"✅ Alert stored for {emailAddress}, expires in {seconds_until_midnight // 60} min."
-    )
+    print(f"✅ Alert stored for {emailAddress}, {str(key)}")
